@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>五子棋</title>
+<style>
+  canvas { border: 1px solid #333; }
+</style>
+</head>
+<body>
+<h2>五子棋（雙人）</h2>
+<canvas id="board" width="450" height="450"></canvas>
+
+<script>
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+const size = 15;
+const grid = 30;
+let board = Array(size).fill().map(() => Array(size).fill(0));
+let player = 1;
+
+function drawBoard() {
+  for (let i = 0; i < size; i++) {
+    ctx.moveTo(grid/2, grid/2 + i*grid);
+    ctx.lineTo(grid/2 + (size-1)*grid, grid/2 + i*grid);
+    ctx.moveTo(grid/2 + i*grid, grid/2);
+    ctx.lineTo(grid/2 + i*grid, grid/2 + (size-1)*grid);
+  }
+  ctx.stroke();
+}
+
+function drawPiece(x, y, player) {
+  ctx.beginPath();
+  ctx.arc(grid/2 + x*grid, grid/2 + y*grid, 12, 0, Math.PI*2);
+  ctx.fillStyle = player === 1 ? "black" : "white";
+  ctx.fill();
+  ctx.stroke();
+}
+
+function checkWin(x, y) {
+  const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+  for (let [dx, dy] of dirs) {
+    let count = 1;
+    for (let i=1;i<5;i++){
+      if(board[y+i*dy]?.[x+i*dx]===player) count++;
+      else break;
+    }
+    for (let i=1;i<5;i++){
+      if(board[y-i*dy]?.[x-i*dx]===player) count++;
+      else break;
+    }
+    if(count>=5) return true;
+  }
+  return false;
+}
+
+canvas.addEventListener("click", e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left - grid/2)/grid);
+  const y = Math.round((e.clientY - rect.top - grid/2)/grid);
+
+  if (board[y][x] === 0) {
+    board[y][x] = player;
+    drawPiece(x, y, player);
+
+    if (checkWin(x, y)) {
+      setTimeout(() => alert((player===1?"黑":"白")+"勝利！"), 10);
+      canvas.removeEventListener("click", arguments.callee);
+    }
+
+    player = player === 1 ? 2 : 1;
+  }
+});
+
+drawBoard();
+</script>
+</body>
+</html>
