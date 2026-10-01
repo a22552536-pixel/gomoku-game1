@@ -833,6 +833,18 @@ function renderView(c, S, env, st) {
   setT(c, S);
   const P = viewRidge(st.ci);
   if (L) { mountainView(c, L, P, st.ci, env, r); constellation(c, S, sk, env, true); setT(c, S); }
+  if (env.ripples && env.ripples.g === st.cycle) {
+    c.save(); c.globalAlpha *= r;
+    for (const rp of env.ripples.list) {
+      const a = env.time - rp.t0; if (a > 4) continue;
+      for (let k = 0; k < 3; k++) {
+        const rr = (a - k * 0.35) * 170; if (rr <= 0) continue;
+        c.beginPath(); c.ellipse(rp.x, rp.y, rr, rr * 0.22, 0, 0, TAU);
+        c.strokeStyle = `rgba(236,244,240,${0.5 * (1 - a / 4) * (1 - k * 0.25)})`; c.lineWidth = 2.2 - k * 0.5; c.stroke();
+      }
+    }
+    c.restore();
+  }
   if (r > 0.01) { c.save(); c.globalAlpha *= r; VIEW_FG[st.ci](c, env, P); c.restore(); }
 }
 function renderWall(c, S, env, st) {
@@ -850,6 +862,10 @@ function renderWall(c, S, env, st) {
   if (env.ghost > 0) drawGhost(c, env);
   c.restore();
   setT(c, S);
+  if (env.winHover && env.winHover.g === st.cycle) {
+    const k = env.winHover.k * (0.6 + 0.4 * Math.sin(t * 2.4));
+    c.save(); c.shadowColor = 'rgba(255,226,160,.9)'; c.shadowBlur = 26 * k * BASE[0]; F.path(c); c.strokeStyle = `rgba(255,230,170,${0.55 * k})`; c.lineWidth = 3; c.stroke(); c.restore();
+  }
   W_.frame(c, t);
   W_.front(c, t);
 }
@@ -1502,6 +1518,14 @@ function renderAerial(c, S, env, st) {
     for (let k = 0; k < 60; k++) wash(c, '#2f2a18', ((k * 211) % 3000) - 1500, ((k * 127) % 1800) - 900, 60, 50, 0.35);
   }
   liuSubject(c, ci, env, false);
+  if (env.trace && env.trace.g === st.cycle && env.trace.bins.size) {
+    c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+    for (const b of env.trace.bins) {
+      const u0 = -1 + b * 2 / TRACE_N, pts = []; for (let k = 0; k <= 6; k++) pts.push(place(L, LIU, u0 + k * 2 / TRACE_N / 6));
+      for (const [w, a] of [[26, 0.08], [10, 0.22], [3, 0.6]]) { c.beginPath(); tracePts(c, pts); c.strokeStyle = `rgba(255,246,214,${a})`; c.lineWidth = w; c.stroke(); }
+    }
+    c.restore();
+  }
   if (ci === 0) for (let k = 0; k < 7; k++) wash(c, '#f4f8f2', ((k * 433 + t * 9) % 3000) - 1500, ((k * 257) % 1600) - 800, 520, 240, 0.45);
 }
 
@@ -1617,15 +1641,31 @@ function skySubject(c, S, sk, env, inner, cAlpha = 1) {
 }
 function constellation(c, S, sk, env, starsOnly) {
   setT(c, S);
-  const L = env.shownLine, K = sk.fit.K, cx = sk.fit.cx, cy = sk.fit.cy, hor = horOf(sk);
-  const col = sk.v === 'dawn' || sk.v === 'dusk' ? '#fff0c4' : '#f0cf7c';
+  const L = env.shownLine, K = sk.fit.K, cx = sk.fit.cx, cy = sk.fit.cy, hor = horOf(sk), t = env.time, lit = env.lit, all = env.allLit;
   const pts = env.ext.map(e => [(uAt(e.i) * RIDGE.hw - cx) * K, (RIDGE.y - L[e.i] * RIDGE.h - cy) * K, e]);
-  if (!starsOnly) { c.beginPath(); tracePts(c, pts); c.strokeStyle = 'rgba(214,176,98,.45)'; c.lineWidth = 1.2; c.stroke(); }
+  if (!starsOnly) {
+    c.save(); c.lineCap = 'round';
+    for (let j = 0; j < pts.length - 1; j++) {
+      const A = pts[j], B = pts[j + 1], on = all || (lit && lit.has(A[2].i) && lit.has(B[2].i));
+      if (!on) continue;
+      const k = all ? 1 : 0.7, gr = c.createLinearGradient(A[0], A[1], B[0], B[1]);
+      gr.addColorStop(0, `rgba(255,236,196,${0.34 * k})`); gr.addColorStop(0.5, `rgba(255,236,196,${0.16 * k})`); gr.addColorStop(1, `rgba(255,236,196,${0.34 * k})`);
+      c.beginPath(); c.moveTo(A[0], A[1]); c.lineTo(B[0], B[1]); c.strokeStyle = gr; c.lineWidth = 1.1; c.stroke();
+    }
+    c.restore();
+  }
   for (const [x, y, e] of pts) {
-    const fl = env.flash['c' + e.i] || 0;
-    glow(c, GLOW_GOLD, x, y, 26 + fl * 30, 0.35 + fl * 0.6);
-    sparkle(c, x, y, 9 + fl * 5, col);
-    if (!starsOnly) { const g0 = c.globalAlpha; c.globalAlpha = g0 * 0.25; sparkle(c, x, hor + (hor - y) * 0.5, 6, col); c.globalAlpha = g0; }
+    const mag = 0.45 + 0.55 * clamp(L[e.i] / 0.9, 0, 1), on = (all || (lit && lit.has(e.i))) ? 1 : 0, fl = env.flash['c' + e.i] || 0;
+    const tw = 0.82 + 0.18 * Math.sin(t * (1.7 + (e.i % 5) * 0.37) + e.i) * Math.sin(t * 0.61 + e.i * 1.3);
+    const warm = (e.i * 7) % 3, core = on ? '#ffeec4' : ['#f4f6ff', '#fff6e4', '#e6eeff'][warm];
+    const r = (1.5 + 1.9 * mag) * (1 + 0.35 * on + 0.4 * fl);
+    glow(c, on ? GLOW_GOLD : GLOW_PALE, x, y, r * (6 + 4 * on + 6 * fl), (0.22 * mag + 0.35 * on + 0.4 * fl) * tw);
+    c.beginPath(); c.arc(x, y, r, 0, TAU); c.fillStyle = core; c.globalAlpha *= 0.75 + 0.25 * tw; c.fill(); c.globalAlpha /= 0.75 + 0.25 * tw;
+    if (mag > 0.8 || on) {
+      const l = r * (3.2 + 2 * on), g0 = c.globalAlpha; c.globalAlpha = g0 * 0.22 * tw;
+      c.strokeStyle = core; c.lineWidth = 0.6; c.beginPath(); c.moveTo(x - l, y); c.lineTo(x + l, y); c.moveTo(x, y - l); c.lineTo(x, y + l); c.stroke(); c.globalAlpha = g0;
+    }
+    if (!starsOnly) { const g0 = c.globalAlpha; c.globalAlpha = g0 * 0.18 * tw; c.fillStyle = core; c.fillRect(x - r * 0.5, hor + (hor - y) * 0.5, r, r * 3); c.globalAlpha = g0; }
     env.hot.push({ S, x, y, id: 'c' + e.i });
   }
 }
@@ -1914,7 +1954,7 @@ function mixHex(a, b, t) {
 const darkOf = g => { const st = stageInfo(g); return DARK[st.kind](st); };
 
 /* ════════════ 狀態、互動、引導 ════════════ */
-const S0 = { z: 0, vz: 0, lines: null, stroke: null, drawn: false, morph: null, lastInput: 0, mouse: null, down: false, flash: {}, hotPrev: new Set(), lag: null, hover: 0, drawnAt: 0, shownScroll: 0 };
+const S0 = { mode: 'rest', target: 0, lean: 0, gate: null, wheelAcc: 0, keyAcc: 0, z: 0, vz: 0, lines: null, stroke: null, drawn: false, morph: null, lastInput: 0, mouse: null, down: false, flash: {}, hotPrev: new Set(), lag: null, hover: 0, drawnAt: 0, shownScroll: 0 };
 const guideEl = document.getElementById('guide'), hintEl = document.getElementById('hint'), title = document.getElementById('title'), sndBtn = document.getElementById('snd');
 let guideKey = '';
 function setGuide(k, text, mode) {
@@ -1937,8 +1977,14 @@ function currentLine() {
 }
 const toStage1 = e => app(inv(BASE), e.clientX * DPR, e.clientY * DPR);
 cv.addEventListener('pointerdown', e => {
-  SND.start(); S0.down = true; S0.mouse = [e.clientX * DPR, e.clientY * DPR];
-  if (S0.drawn) return;
+  SND.start(); S0.down = true; S0.mouse = [e.clientX * DPR, e.clientY * DPR]; S0.lastInput = performance.now();
+  if (S0.drawn) {
+    if (S0.mode !== 'rest' || !S0.gate) return;
+    const st = stageInfo(S0.gate.g), mp = stageMouse();
+    if (st.kind === 0 && FRAMES[st.ci].inside(mp[0], mp[1])) { SND.tone(196, 2.4, 0.04); advance(); }
+    if (st.kind === 1 && mp[1] > viewRidge(st.ci).y + 8 && S0.gate.rip.length < 3) { S0.gate.rip.push({ x: mp[0], y: mp[1], t0: env.time }); SND.tone(520 + Math.random() * 200, 0.5, 0.05, 0.6); SND.tone(260, 1.2, 0.03, 0.9); }
+    return;
+  }
   const p = toStage1(e);
   if (!FRAMES[0].inside(p[0], Math.min(p[1], 229))) return;
   cv.setPointerCapture(e.pointerId);
@@ -1946,7 +1992,7 @@ cv.addEventListener('pointerdown', e => {
   setGuide('none', '');
 });
 cv.addEventListener('pointermove', e => {
-  S0.mouse = [e.clientX * DPR, e.clientY * DPR];
+  S0.mouse = [e.clientX * DPR, e.clientY * DPR]; S0.lastInput = performance.now();
   if (!S0.stroke || S0.drawn) return;
   const p = toStage1(e);
   S0.stroke.push([clamp(p[0], -252, 252), clamp(p[1], RIDGE.y - RIDGE.h * 1.25, RIDGE.y)]);
@@ -1969,14 +2015,12 @@ addEventListener('wheel', e => {
   e.preventDefault();
   if (!S0.drawn) return;
   const d = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 800 : 1);
-  S0.vz = clamp(S0.vz + d * 0.000042, -0.02, 0.02);
-  S0.lastInput = performance.now();
+  if (d > 0) { S0.wheelAcc += d; if (S0.wheelAcc > 1400) advance(); }
 }, { passive: false });
 addEventListener('keydown', e => {
   if (e.key === 'm' || e.key === 'M') { SND.start(); SND.toggle(); return; }
   if (!S0.drawn) return;
-  if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') { SND.start(); S0.vz = clamp(S0.vz + 0.0055, -0.02, 0.02); S0.lastInput = performance.now(); e.preventDefault(); }
-  if (e.key === 'ArrowUp' || e.key === 'PageUp') { S0.vz = clamp(S0.vz - 0.0055, -0.02, 0.02); S0.lastInput = performance.now(); e.preventDefault(); }
+  if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown' || e.key === 'Enter') { SND.start(); e.preventDefault(); if (++S0.keyAcc >= 3) advance(); }
 });
 sndBtn.addEventListener('click', () => { SND.start(); SND.toggle(); });
 
@@ -2007,6 +2051,60 @@ function drawCursor(dark, dt) {
   ctx.beginPath(); ctx.arc(mx, my, 1.7 * d, 0, TAU); ctx.fillStyle = rgba(col, 0.9); ctx.fill();
 }
 
+/* ════════════ 每一站的動作 ════════════ */
+const TRACE_N = 24;
+const DUR = [6.5, 8, 7, 7.5, 10, 7.5];
+const HINTS = [
+  () => '走近那扇窗',
+  () => '輕觸水面',
+  st => ({ fish: '碰一碰那條魚', cat: '摸摸牠', whale: '靠近那頭鯨', dog: '摸摸牠' })[st.anim],
+  st => ({ fish: '撥開魚群', cat: '揮散螢火', whale: '驚起鶴群', dog: '驚動鹿群' })[st.anim],
+  st => ['沿著河走一遍', '沿著雲走一遍', '沿著潮水走一遍', '沿著溪走一遍'][st.ci],
+  () => '把星星連起來',
+];
+const GROUP_ID = { fish: 'sch', cat: 'fly', whale: 'cr', dog: 'deer' };
+const BIG_ID = { fish: 'bigfish', cat: 'cat', whale: 'whale', dog: 'dog' };
+function arrive(g) {
+  S0.gate = { g, v: 0, p: 0, t0: performance.now(), rip: [], bins: new Set(), lit: new Set(), goAt: 0, hinted: false };
+  env.ripples = { g: stageInfo(g).cycle, list: S0.gate.rip };
+}
+function advance() {
+  if (S0.mode !== 'rest' || !S0.drawn) return;
+  S0.mode = 'move'; S0.target = Math.floor(S0.z) + 1; S0.wheelAcc = 0; S0.keyAcc = 0;
+  if (guideKey !== 'none') setGuide('none', '');
+}
+function stageMouse() { return S0.mouse ? app(inv(BASE), S0.mouse[0], S0.mouse[1]) : null; }
+function updateGate(now, dt) {
+  const G = S0.gate; if (!G) return;
+  const st = stageInfo(G.g), mp = stageMouse();
+  env.winHover = null; env.lit = null; env.allLit = false;
+  if (st.kind === 0) {
+    const inside = mp && FRAMES[st.ci].inside(mp[0], mp[1]);
+    G.hover = lerp(G.hover || 0, inside ? 1 : 0, 1 - Math.pow(0.02, dt));
+    env.winHover = { g: st.cycle, k: G.hover };
+  } else if (st.kind === 2) {
+    const a = AG.get(BIG_ID[st.anim]); G.v += (a ? a.fear : 0) * dt; G.p = clamp(G.v / 1.3, 0, 1);
+  } else if (st.kind === 3) {
+    let n = 0, sc = 0; const pre = GROUP_ID[st.anim];
+    for (const [id, a] of AG) if (id.startsWith(pre)) { n++; if (a.fear > 0.25) sc++; }
+    if (n) G.v += Math.min(1, sc / n * 6) * dt; G.p = clamp(G.v / 1.4, 0, 1);
+  } else if (st.kind === 4) {
+    if (mp) { const u = clamp(mp[0] / LIU.hw, -1, 1), q = place(env.shownLine || DEFAULT_LINE, LIU, u); if (Math.abs(mp[1] - q[1]) < 80 && Math.abs(mp[0]) < LIU.hw) G.bins.add(Math.min(TRACE_N - 1, Math.floor((u + 1) / 2 * TRACE_N))); }
+    env.trace = { g: st.cycle, bins: G.bins }; G.p = clamp(G.bins.size / 15, 0, 1);
+  } else if (st.kind === 5) {
+    for (const id of S0.hotPrev) if (id[0] === 'c') G.lit.add(+id.slice(1));
+    const need = env.ext.length || 1, n = env.ext.filter(e => G.lit.has(e.i)).length;
+    env.lit = G.lit; G.p = n / need;
+    if (n >= need) { env.allLit = true; if (!G.goAt) { G.goAt = now + 1600; SND.tone(392, 3, 0.05); SND.tone(587.33, 3.2, 0.04); } }
+  }
+  if (st.kind === 1) G.p = clamp(G.rip.length / 2, 0, 1);
+  if (G.p >= 1 && !G.goAt) G.goAt = now + (st.kind === 1 ? 900 : 350);
+  if (G.goAt && now >= G.goAt) advance();
+  // 提示：停著不動一陣子才出現，寫的是場景裡的動作
+  const wait = st.cycle === 0 ? 3500 : 7000;
+  if (!G.hinted && G.p === 0 && now - G.t0 > wait && now - S0.lastInput > 2500) { G.hinted = true; guideKey = ''; setGuide('h' + G.g, HINTS[st.kind](st), 'draw'); }
+  if (G.hinted && G.p > 0 && guideKey === 'h' + G.g) setGuide('none', '');
+}
 /* ════════════ 主迴圈 ════════════ */
 let last = performance.now();
 const env = { time: 0, dt: 0.016, hot: [], flash: {}, ext: [] };
@@ -2022,15 +2120,16 @@ function frame(now) {
   }
   env.time = now / 1000; env.dt = dt;
   if (S0.drawn && !window.__freeze) {
-    const f = S0.z - Math.floor(S0.z), slow = 1 - 0.5 * Math.exp(-((f / 0.07) ** 2)) - 0.5 * Math.exp(-(((1 - f) / 0.07) ** 2));
-    S0.z = Math.max(0, S0.z + S0.vz * slow * dt * 60);
-    S0.vz *= Math.pow(0.92, dt * 60);
-    const idle = now - S0.lastInput;
-    if (idle > 12000 && Math.abs(S0.vz) < 0.001) S0.z += 0.009 * dt;
-    if (S0.z < 0.2 && now - S0.drawnAt > 1800 && (S0.shownScroll === 0 || (idle > 22000 && S0.shownScroll === 1))) {
-      S0.shownScroll++; guideKey = ''; setGuide('scroll' + S0.shownScroll, '轉動滾輪，或按空白鍵　往後退', 'scroll');
+    if (S0.mode === 'move') {
+      const g0 = Math.floor(S0.z + 1e-9);
+      S0.z = Math.min(S0.target, S0.z + dt / DUR[stageInfo(g0).kind]);
+      if (S0.z >= S0.target - 1e-6) { S0.z = S0.target; S0.mode = 'rest'; S0.lean = 0; arrive(S0.target); }
+    } else {
+      if (!S0.gate || S0.gate.g !== S0.target) arrive(S0.target);
+      updateGate(now, dt);
+      S0.lean = lerp(S0.lean, (S0.gate ? S0.gate.p : 0) * 0.05, 1 - Math.pow(0.1, dt));
+      if (S0.mode === 'rest') S0.z = S0.target + S0.lean;
     }
-    if (S0.z > 0.25 && guideKey.startsWith('scroll')) setGuide('none', '');
   }
   if (!S0.drawn && !S0.stroke && guideKey === '' && now > 1200) setGuide('draw', '在窗裡　從左到右　畫一道山', 'draw');
   const gp = (env.time - 1.6) % 7.5;
@@ -2081,7 +2180,16 @@ requestAnimationFrame(frame);
 window.__shanhai = {
   state: S0,
   draw(pts) { S0.stroke = pts; finishStroke(); S0.morph = null; },
-  setZ(z) { S0.z = z; S0.vz = 0; },
+  setZ(z) { S0.z = z; S0.target = Math.floor(z); S0.mode = 'rest'; S0.gate = null; },
+  dbg: () => ({ z: S0.z, mode: S0.mode, p: S0.gate && S0.gate.p, hint: hintEl.textContent, op: guideEl.style.opacity }),
+  scr(x, y) { const q = app(BASE, x, y); return [q[0] / DPR * RS / RS, q[1] / DPR]; },
+  geo() {
+    const g = S0.target, st = stageInfo(g), L = env.shownLine;
+    const out = { kind: st.kind, ci: st.ci, view: viewRidge(st.ci), big: AG.get(BIG_ID[st.anim]) };
+    if (st.kind === 4) out.river = Array.from({ length: 30 }, (_, k) => place(L, LIU, -0.95 + k * 1.9 / 29));
+    if (st.kind === 5) { const sk = skyCtx(st.cycle), K = sk.fit.K; out.stars = env.ext.map(e => [(uAt(e.i) * RIDGE.hw - sk.fit.cx) * K, (RIDGE.y - L[e.i] * RIDGE.h - sk.fit.cy) * K]); }
+    return out;
+  },
 };
 })();
 </script>
