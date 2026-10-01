@@ -450,7 +450,7 @@ function drawWhale(c, L, o, env) {
   const hf = hAt(L, 0.72) * 85, ry = Math.max(16, hf * (1 + REFL) / 2), cy = -hf * (1 - REFL) / 2;
   const grad = vgrad(c, -85, 60, ['#435d62', '#617d7b', '#aeb094', '#e8ddc2']);
   if (g > 0.01) {
-    c.save(); c.translate(-74, 0); c.rotate(Math.sin(t * 0.9) * 0.1);
+    c.save(); c.translate(-74, 0); c.rotate(Math.sin(t * (0.9 + 2.5 * (o.stroke || 0))) * (0.1 + 0.2 * (o.stroke || 0)));
     c.beginPath(); c.moveTo(0, -6); c.lineTo(-30 * g, -3);
     c.bezierCurveTo(-44 * g, -20 * g, -60 * g, -38 * g, -80 * g, -36 * g);
     c.quadraticCurveTo(-70 * g, -14 * g, -50 * g, 0);
@@ -531,7 +531,7 @@ function drawCat(c, L, o, env) {
       pencil(c, [[-2, -28], [-1, -22]], dark, 1.6, 0.6, 1); pencil(c, [[3, -29], [3, -22]], dark, 1.6, 0.6, 2); pencil(c, [[8, -28], [7, -22]], dark, 1.6, 0.6, 3);
       wash(c, '#f2a2b4', -9, -7, 12, 7, 0.9); wash(c, '#f2a2b4', 16, -7, 12, 7, 0.9);
     }
-    const open = clamp((Math.sin(t * 0.21 + 1.3) - 0.93) * 16, 0, 1);
+    const open = Math.max(clamp((Math.sin(t * 0.21 + 1.3) - 0.93) * 16, 0, 1), sstep(0.3, 0.8, o.look || 0));
     for (const ex of [-4, 10]) {
       if (open > 0.02) {
         c.beginPath(); c.ellipse(ex, -14, 4.2, 3.2 * open, 0, 0, TAU); c.fillStyle = '#f0cb62'; c.fill();
@@ -571,6 +571,7 @@ function drawDog(c, L, o, env) {
   if (g > 0.01) {
     const hr = hAt(L, -0.8) * 85;
     const curl = []; for (let a = 0; a <= 1; a += 0.05) { const ang = Math.PI * 0.9 - a * Math.PI * 1.7, rr = 13 * g * (1 - a * 0.45); curl.push([-64 + Math.cos(ang) * rr, -hr - 10 * g + Math.sin(ang) * rr]); }
+    if (o.wag) { const wg = Math.sin(t * 14) * 0.35 * o.wag, cx0 = -64, cy0 = -hr - 10 * g; for (const q of curl) { const dx = q[0] - cx0, dy = q[1] - cy0; q[0] = cx0 + dx * Math.cos(wg) - dy * Math.sin(wg); q[1] = cy0 + dx * Math.sin(wg) + dy * Math.cos(wg); } }
     brush(c, curl, 9 * g, ochre, 2, 0.3);
     brush(c, curl.map(p => [p[0] + 1, p[1] + 2]), 3.5 * g, cream, 3, 0.4);
     if (!lite) pen(c, curl, 0.7, rgba(line, 0.6));
@@ -1020,21 +1021,34 @@ function renderClose(c, S, env, st) {
     for (const p of PETALS) { const x = ((p.x + t * p.sp + 1100) % 2200) - 1100; c.save(); c.translate(x, surf + 16 + Math.sin(t + p.r) * 4); c.rotate(p.r + t * 0.2); c.beginPath(); c.ellipse(0, 0, 9, 5, 0, 0, TAU); c.fillStyle = 'rgba(244,196,196,.9)'; c.fill(); c.restore(); }
     for (let k = 0; k < 5; k++) {
       const x = ((k * 377 + t * (14 + k * 3)) % (2 * sw + 400)) - sw - 200, y = -180 + k * 70;
-      c.save(); c.globalAlpha = 0.4; c.translate(x, y); c.scale(0.8, 0.8); drawFish(c, BODY.fish, { grow: 1, lite: true, ph: k }, env); c.restore();
+      const sa = flee('smallfish' + k, x, y, env.mouse ? app(inv(S), env.mouse[0], env.mouse[1]) : null, { R: 200, push: 3000, spring: 0.6, damp: 0.25, cue: 'fish' });
+      c.save(); c.globalAlpha = 0.4; c.translate(x + sa.ox, y + sa.oy); c.rotate(Math.atan2(sa.vy, 80 + Math.abs(sa.vx)) * 0.8); c.scale(0.8 * (sa.vx < -60 ? -1 : 1), 0.8); drawFish(c, BODY.fish, { grow: 1, lite: true, ph: k + t * 4 * sa.fear }, env); c.restore();
     }
-    const fx = Math.sin(t * 0.25) * 60, fy = 30 + Math.sin(t * 0.5) * 12;
-    c.save(); c.translate(fx, fy); c.rotate(Math.sin(t * 0.25 + 1.2) * 0.05); c.scale(2.7, 2.7); drawFish(c, BODY.fish, o, env); c.restore();
+    const mm = env.mouse ? app(inv(S), env.mouse[0], env.mouse[1]) : null;
+    const fx0 = Math.sin(t * 0.25) * 60, fy0 = 30 + Math.sin(t * 0.5) * 12;
+    const fa = flee('bigfish', fx0, fy0, mm, { R: 300, push: 2400, spring: 0.3, damp: 0.35, calm: 0.3, cue: 'fish' });
+    if (Math.abs(fa.vx) > 40) fa.face = lerp(fa.face, fa.vx < 0 ? -1 : 1, 1 - Math.pow(0.002, env.dt));
+    else fa.face = lerp(fa.face, 1, 1 - Math.pow(0.3, env.dt));
+    const fx = fx0 + fa.ox, fy = fy0 + fa.oy, tilt = clamp(fa.vy / 600, -0.4, 0.4);
+    c.save(); c.translate(fx, fy); c.rotate(Math.sin(t * 0.25 + 1.2) * 0.05 + tilt * Math.sign(fa.face || 1)); c.scale(2.7 * fa.face, 2.7); drawFish(c, BODY.fish, Object.assign({}, o, { ph: t * 3 * fa.fear }), env); c.restore();
     c.strokeStyle = 'rgba(245,252,248,.6)'; c.lineWidth = 0.9;
     for (let k = 0; k < 6; k++) { const y = fy - 20 - ((t * 26 + k * 70) % 420), x = fx + 210 + Math.sin(t + k) * 6 + k * 3; c.beginPath(); c.arc(x, y, 2 + k % 3, 0, TAU); c.stroke(); }
     motes(c, t, 'rgba(250,255,245,.45)');
   } else if (st.anim === 'cat') {
     c.translate(0, 110);
     beiBg(c, 'cat', env);
-    c.save(); c.scale(2.3, 2.3); drawCat(c, BODY.cat, o, env); c.restore();
+    const mm = env.mouse ? app(inv(mul(S, tr(0, 110))), env.mouse[0], env.mouse[1]) : null, ca = agent('cat');
+    const near = mm ? 1 - sstep(140, 320, Math.hypot(mm[0] - 200, mm[1] + 40)) : 0;
+    if (near > 0.6 && ca.fear < 0.3) cue('big');
+    ca.fear = lerp(ca.fear, near, 1 - Math.pow(0.05, env.dt));
+    c.save(); c.scale(2.3, 2.3); drawCat(c, BODY.cat, Object.assign({}, o, { look: ca.fear }), env); c.restore();
   } else if (st.anim === 'dog') {
     c.translate(0, 110);
     beiBg(c, 'dog', env);
-    c.save(); c.scale(2.2, 2.2); drawDog(c, BODY.dog, o, env); c.restore();
+    const mm = env.mouse ? app(inv(mul(S, tr(0, 110))), env.mouse[0], env.mouse[1]) : null, da = agent('dog');
+    const near = mm ? 1 - sstep(160, 360, Math.hypot(mm[0], mm[1] + 40)) : 0;
+    da.fear = lerp(da.fear, near, 1 - Math.pow(0.05, env.dt));
+    c.save(); c.scale(2.2, 2.2); drawDog(c, BODY.dog, Object.assign({}, o, { wag: da.fear }), env); c.restore();
   } else {
     // 半水半天：海面在畫面正中
     c.fillStyle = vgrad(c, -sh, 0, ['#b9bfae', '#e2d0ae', '#f0d8b4']); c.fillRect(-9000, -9000, 18000, 9000);
@@ -1051,7 +1065,9 @@ function renderClose(c, S, env, st) {
     rays(c, t, 'rgba(250,240,210,.06)');
     c.globalAlpha = 0.4; c.fillStyle = pat(c, 'hatch'); c.fillRect(-9000, sh * 0.55, 18000, 9000); c.globalAlpha = 1;
     motes(c, t, 'rgba(245,235,210,.5)');
-    c.save(); c.translate(-60 + Math.sin(t * 0.18) * 50, 170 + Math.sin(t * 0.3) * 8); c.scale(3.1, 3.1); drawWhale(c, BODY.whale, o, env); c.restore();
+    const wx = -60 + Math.sin(t * 0.18) * 50, wy = 170 + Math.sin(t * 0.3) * 8;
+    const wa = flee('whale', wx, wy, env.mouse ? app(inv(S), env.mouse[0], env.mouse[1]) : null, { R: 380, push: 500, up: -0.6, spring: 0.18, damp: 0.5, calm: 0.15, cue: 'big' });
+    c.save(); c.translate(wx + wa.ox, wy + wa.oy); c.rotate(clamp(wa.vy / 500, -0.25, 0.25)); c.scale(3.1, 3.1); drawWhale(c, BODY.whale, Object.assign({}, o, { stroke: wa.fear }), env); c.restore();
     c.restore();
     c.strokeStyle = 'rgba(250,240,215,.85)'; c.lineWidth = 2; c.beginPath();
     for (let x = -sw - 50; x <= sw + 50; x += 20) { const y = Math.sin(x / 40 + t * 1.3) * 2.5; x === -sw - 50 ? c.moveTo(x, y) : c.lineTo(x, y); }
@@ -1211,9 +1227,46 @@ function qunSubject(c, anim, env, lite) {
       brush(c, top, 1.8, '#3a2c18', 9, 0.4);
       for (const mp of MAPLES) { const p = place(L, P, mp.u); maple(c, p[0], p[1] + 3, mp); }
     }
-    for (const d of DEER) { const p = place(L, P, d.u); deer(c, p[0], p[1] + 1, d, t); }
+    for (const d of DEER) {
+      const p0 = place(L, P, d.u);
+      const ag = lite ? agent('deer' + d.ph) : flee('deer' + d.ph, p0[0], p0[1] - 20, m, { R: 160, push: 2600, flat: true, spring: 0.25, damp: 0.4, calm: 0.25, cue: 'deer' });
+      const u = clamp(d.u + ag.ox / P.hw, -0.98, 0.98), p = place(L, P, u), sp = Math.abs(ag.vx);
+      if (Math.abs(ag.vx) > 25) ag.face = ag.vx < 0 ? -1 : 1;
+      const hop = sp > 40 ? Math.abs(Math.sin(t * 9 + d.ph)) * Math.min(16, sp * 0.05) : 0;
+      const dd = ag.fear > 0.05 ? Object.assign({}, d, { flip: ag.face < 0, graze: false }) : d;
+      deer(c, p[0], p[1] + 1 - hop, dd, t);
+    }
   }
 }
+/* 被驚擾的生物：各自有偏移與速度，逃開之後慢慢回來 */
+const AG = new Map(), CUE = {};
+function agent(id) { let a = AG.get(id); if (!a) AG.set(id, a = { ox: 0, oy: 0, vx: 0, vy: 0, fear: 0, face: 1, ping: 0 }); return a; }
+function flee(id, x, y, m, o) {
+  const a = agent(id), dt = env.dt;
+  if (m) {
+    const dx = x + a.ox - m[0], dy = y + a.oy - m[1], d = Math.hypot(dx, dy) || 1;
+    if (d < o.R) {
+      const k = Math.pow(1 - d / o.R, 1.3) * o.push;
+      a.vx += dx / d * k * dt; a.vy += (dy / d - (o.up || 0)) * k * dt * (o.flat ? 0 : 1);
+      a.fear = Math.min(1, a.fear + dt * 6);
+      if (a.fear > 0.5 && !a.ping && o.cue) { a.ping = 1; cue(o.cue); }
+    }
+  }
+  a.vx -= a.ox * o.spring * dt; a.vy -= a.oy * o.spring * dt;
+  const dm = Math.pow(o.damp, dt); a.vx *= dm; a.vy *= dm;
+  a.ox += a.vx * dt; a.oy += a.vy * dt;
+  a.fear = Math.max(0, a.fear - dt * (o.calm || 0.4)); if (a.fear < 0.1) a.ping = 0;
+  return a;
+}
+function cue(kind) {
+  const now = env.time; if (now - (CUE[kind] || 0) < 0.18) return; CUE[kind] = now;
+  if (kind === 'fish') SND.tone(380 + Math.random() * 300, 0.16, 0.035, 1.9);
+  else if (kind === 'crane') { SND.tone(660 + Math.random() * 80, 0.7, 0.022, 1.28, 'triangle'); SND.tone(240, 0.3, 0.03, 0.55); }
+  else if (kind === 'fly') SND.tone(1500 + Math.random() * 600, 0.6, 0.012);
+  else if (kind === 'deer') SND.tone(190, 0.14, 0.035, 0.7);
+  else if (kind === 'big') SND.tone(110, 1.2, 0.03, 0.8);
+}
+const heading = (a, ag, cruise) => Math.atan2(Math.sin(a) * cruise + ag.vy, Math.cos(a) * cruise + ag.vx);
 /* 第四個鏡位：換一個角度看群——仰望 */
 const GP = {
   fish: { x: 0, y: 260, hw: 780, h: 560 },
@@ -1254,7 +1307,6 @@ function renderGroup(c, S, env, st) {
   const t = env.time, L = env.shownLine || DEFAULT_LINE, [sw, sh] = screenHalf(), P = GP[st.anim];
   env.mouseIn = env.mouse ? app(inv(S), env.mouse[0], env.mouse[1]) : null;
   const m = env.mouseIn;
-  const push = (x, y, R0, k) => { if (!m) return [x, y]; const dx = x - m[0], dy = y - m[1], d = Math.hypot(dx, dy) || 1; return d < R0 ? [x + dx / d * (R0 - d) * k, y + dy / d * (R0 - d) * k] : [x, y]; };
   if (st.anim === 'fish') {
     // 從水底往上看：斯涅耳之窗
     const W0 = SNELL;
@@ -1282,9 +1334,9 @@ function renderGroup(c, S, env, st) {
     glow(c, GLOW_PALE, W0.x, W0.y, W0.r * 1.5, 0.18);
     for (const f of SCHOOL) {
       const u = wrapU(f.u + t * f.sp * 0.8); if (Math.abs(u) > 0.97) continue;
-      const p = place(L, P, u), a = tang(L, P, u);
-      const [x, y] = push(p[0] - Math.sin(a) * f.o * 1.3, p[1] + Math.cos(a) * f.o * 1.3, 120, 0.7);
-      fishSil(c, x, y, a, 1.6 * f.sc, f.ph, t);
+      const p = place(L, P, u), a = tang(L, P, u), x = p[0] - Math.sin(a) * f.o * 1.3, y = p[1] + Math.cos(a) * f.o * 1.3;
+      const ag = flee('sch' + f.ph, x, y, m, { R: 190, push: 3200, spring: 0.9, damp: 0.22, cue: 'fish' });
+      fishSil(c, x + ag.ox, y + ag.oy, heading(a, ag, 70), 1.6 * f.sc, f.ph, t * (1 + 4 * ag.fear));
     }
     motes(c, t, 'rgba(220,240,230,.35)', 1.3);
   } else if (st.anim === 'cat') {
@@ -1296,8 +1348,9 @@ function renderGroup(c, S, env, st) {
     c.save(); c.globalCompositeOperation = 'lighter';
     for (const f of FLIES) {
       const u = clamp(f.u + Math.sin(t * 0.05 * f.sp + f.ph) * 0.03, -1, 1), p = place(L, P, u);
-      const [x, y] = push(p[0] + Math.sin(t * 0.4 * f.sp + f.ph) * 16, p[1] + f.o * 1.4 + Math.cos(t * 0.3 * f.sp + f.ph) * 12, 130, 0.6);
-      glow(c, GLOW_GOLD, x, y, f.r * 1.3, 0.35 + 0.35 * Math.sin(t * f.sp * 2 + f.ph));
+      const x = p[0] + Math.sin(t * 0.4 * f.sp + f.ph) * 16, y = p[1] + f.o * 1.4 + Math.cos(t * 0.3 * f.sp + f.ph) * 12;
+      const ag = flee('fly' + f.ph, x, y, m, { R: 170, push: 1600, spring: 0.45, damp: 0.3, cue: 'fly' });
+      glow(c, GLOW_GOLD, x + ag.ox, y + ag.oy, f.r * (1.3 + ag.fear * 0.8), Math.min(1, (0.35 + 0.35 * Math.sin(t * f.sp * 2 + f.ph)) * (1 + ag.fear * 1.4)));
     }
     c.restore();
     const gs = Math.pow(st.settle ?? 1, 3); c.save(); c.globalAlpha *= gs;
@@ -1323,9 +1376,9 @@ function renderGroup(c, S, env, st) {
       wash(c, '#fbf1dc', cx, cy - 6, 260, 60, 0.7); pen(c, pts, 0.9, 'rgba(58,40,24,.45)');
     }
     for (const k of CRANES) {
-      const u = clamp(k.u + Math.sin(t * 0.03 + k.ph) * 0.02, -0.97, 0.97), p = place(L, P, u), a = tang(L, P, u);
-      const [x, y] = push(p[0], p[1] + k.o * 1.4, 110, 0.5);
-      craneBelow(c, x, y, a, k.sc * 1.5, k.ph, t);
+      const u = clamp(k.u + Math.sin(t * 0.03 + k.ph) * 0.02, -0.97, 0.97), p = place(L, P, u), a = tang(L, P, u), x = p[0], y = p[1] + k.o * 1.4;
+      const ag = flee('cr' + k.ph, x, y, m, { R: 230, push: 2200, up: 0.7, spring: 0.08, damp: 0.62, calm: 0.12, cue: 'crane' });
+      craneBelow(c, x + ag.ox, y + ag.oy, heading(a, ag, 40), k.sc * 1.5 * (1 + ag.fear * 0.12), k.ph, t * (1 + 2.6 * ag.fear));
     }
   } else {
     qunBg(c, 'dog', env);
@@ -1956,7 +2009,7 @@ function drawCursor(dark, dt) {
 
 /* ════════════ 主迴圈 ════════════ */
 let last = performance.now();
-const env = { time: 0, hot: [], flash: {}, ext: [] };
+const env = { time: 0, dt: 0.016, hot: [], flash: {}, ext: [] };
 const PERF = { n: 0, sum: 0 };
 function frame(now) {
   const raw = now - last, dt = Math.min(0.05, raw / 1000); last = now;
@@ -1967,7 +2020,7 @@ function frame(now) {
     const nrs = avg > 30 && RS > 0.55 ? RS * 0.85 : avg < 18 && RS < 1 ? Math.min(1, RS / 0.85) : RS;
     if (nrs !== RS) { RS = nrs; resize(); }
   }
-  env.time = now / 1000;
+  env.time = now / 1000; env.dt = dt;
   if (S0.drawn && !window.__freeze) {
     const f = S0.z - Math.floor(S0.z), slow = 1 - 0.5 * Math.exp(-((f / 0.07) ** 2)) - 0.5 * Math.exp(-(((1 - f) / 0.07) ** 2));
     S0.z = Math.max(0, S0.z + S0.vz * slow * dt * 60);
