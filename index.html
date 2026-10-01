@@ -1041,9 +1041,10 @@ function renderClose(c, S, env, st) {
     c.save(); c.globalAlpha = 0.25; c.fillStyle = pat(c, 'hatch'); c.fillRect(-9000, -9000, 18000, 9000 - sh * 0.55); c.restore();
     glow(c, GLOW_WARM, 460, -190, 220, 0.6);
     c.beginPath(); c.arc(460, -190, 46, 0, TAU); c.fillStyle = '#f7ead0'; c.fill(); c.strokeStyle = '#6b4a2a'; c.lineWidth = 1; c.stroke();
-    const isl = lineHill(c, L, { x: -260, y: 0, hw: 360, h: 150 }, '#6d6a5b', 0.92);
-    c.save(); c.beginPath(); tracePts(c, isl); c.lineTo(100, 0); c.lineTo(-620, 0); c.closePath(); c.clip(); c.globalAlpha = 0.5; c.fillStyle = pat(c, 'hatch'); c.fillRect(-700, -200, 800, 200); c.restore();
-    pen(c, isl.filter(p => Math.abs(p[0] + 260) < 362), 1, '#3a2a1c');
+    const IP = islandP(), isl = lineHill(c, L, IP, '#6d6a5b', 0.92);
+    c.save(); c.beginPath(); tracePts(c, isl); c.closePath(); c.clip(); c.globalAlpha = 0.5; c.fillStyle = pat(c, 'hatch'); c.fillRect(IP.x - IP.hw, -IP.h, IP.hw * 2, IP.h); c.restore();
+    pen(c, isl, 1, '#3a2a1c');
+    c.beginPath(); tracePts(c, linePts(L, IP, 3, -0.35)); c.closePath(); c.fillStyle = 'rgba(80,90,84,.35)'; c.fill();
     for (let k = 0; k < 5; k++) crane(c, -80 + k * 46 + Math.sin(t * 0.2) * 20, -260 + (k % 2) * 16, 0.55, k, t);
     c.fillStyle = vgrad(c, 0, sh + 60, ['#8ea79c', '#5d7a74', '#2f4747']); c.fillRect(-9000, 0, 18000, 9000);
     c.save(); c.beginPath(); c.rect(-9000, 0, 18000, 9000); c.clip();
@@ -1299,6 +1300,7 @@ function renderGroup(c, S, env, st) {
       glow(c, GLOW_GOLD, x, y, f.r * 1.3, 0.35 + 0.35 * Math.sin(t * f.sp * 2 + f.ph));
     }
     c.restore();
+    const gs = Math.pow(st.settle ?? 1, 3); c.save(); c.globalAlpha *= gs;
     for (let k = 0; k < 52; k++) {
       const x = -sw - 60 + k * (2 * sw + 120) / 51, len = 170 + ((k * 97) % 260), lean = -x / sw * 0.55 + Math.sin(t * 0.5 + k) * 0.05;
       brush(c, bezPts([x, sh + 30], [x, sh - len * 0.4], [x + lean * len * 0.3, sh - len * 0.8], [x + lean * len * 0.55, sh - len], 10), 9, 'rgba(14,16,38,.92)', k, 0.3);
@@ -1307,6 +1309,7 @@ function renderGroup(c, S, env, st) {
       const a = 0.25 + k * 0.13 + Math.sin(t * 0.4 + k) * 0.03, l = 140 + (k % 3) * 40, x0 = -sw - 20, y0 = -sh + 40 + k * 26;
       brush(c, [[x0, y0], [x0 + Math.cos(a) * l * 0.5, y0 + Math.sin(a) * l * 0.5 - 8], [x0 + Math.cos(a) * l, y0 + Math.sin(a) * l]], 16, 'rgba(16,20,44,.9)', k, 1);
     }
+    c.restore();
   } else if (st.anim === 'whale') {
     // 浮在海面，仰看鶴群
     fillAll(c, vgrad(c, -sh, sh, ['#cdb489', '#e2cda6', '#f1e1c4']));
@@ -1591,13 +1594,24 @@ function draw(c, g, S, extra) {
   const st = Object.assign(stageInfo(g), extra || {});
   c.save(); KINDS[st.kind](c, S, env, st); c.restore();
 }
-const EASE = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const EASE = t => 0.45 * t + 0.55 * t * t * (3 - 2 * t);
 const tr = (x, y) => [1, 0, x, y];
 const rot = a => [Math.cos(a), Math.sin(a), 0, 0];
 function clearOff() { octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalAlpha = 1; octx.globalCompositeOperation = 'source-over'; octx.filter = 'none'; octx.clearRect(0, 0, off.width, off.height); }
 function blit(alpha, filter) {
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = alpha; if (filter) ctx.filter = filter; ctx.drawImage(off, 0, 0); ctx.restore();
 }
+/* 鎖住那條線：上一個畫面的山與下一個畫面的山用同一個相似變換對齊，只有周圍在換 */
+function lockZoom(g, t, M) {
+  const e = EASE(t), cam = camOf(M, e);
+  draw(ctx, g + 1, mul(BASE, cam));
+  clearOff();
+  draw(octx, g, mul(BASE, mul(cam, M)));
+  blit(1 - sstep(0.12, 0.88, t));
+}
+const ISLAND_S = 0.42;
+function islandP() { const V = viewRidge(2); return { x: -250, y: 0, hw: V.hw * ISLAND_S, h: V.h * ISLAND_S }; }
+function islandM() { const V = viewRidge(2); return [ISLAND_S, 0, -250 - ISLAND_S * V.x, -ISLAND_S * V.y]; }
 /* 推進：穿過窗 */
 function dollyIn(g, t) {
   const f = frameFit(stageInfo(g).ci);
@@ -1613,7 +1627,7 @@ function pan(g, t, D, mode) {
   const e = EASE(t), [sw, sh] = screenHalf();
   draw(ctx, g, mul(BASE, tr(-e * D[0], -e * D[1])));
   clearOff();
-  draw(octx, g + 1, mul(BASE, tr((1 - e) * D[0], (1 - e) * D[1])));
+  draw(octx, g + 1, mul(BASE, tr((1 - e) * D[0], (1 - e) * D[1])), { settle: e });
   octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalCompositeOperation = 'destination-in';
   if (mode === 'water') {
     const ys = (viewRidge(stageInfo(g).ci).y - e * D[1]) * BASE[0] + BASE[3];
@@ -1627,17 +1641,17 @@ function pan(g, t, D, mode) {
     for (let x = 0; x <= cv.width; x += 12) { const y = ys + Math.sin(x / 40 / DPR + env.time * 2) * 2 * DPR; x ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
     ctx.stroke(); ctx.restore();
   } else {
-    const len = Math.hypot(D[0], D[1]), dx = D[0] / len, dy = D[1] / len, w = Math.min(420, len * 0.3);
+    const len = Math.hypot(D[0], D[1]), dx = D[0] / len, dy = D[1] / len, w = Math.min(640, len * 0.45);
     const mx = D[0] * (0.5 - e), my = D[1] * (0.5 - e);
     const p0 = app(BASE, mx - dx * w, my - dy * w), p1 = app(BASE, mx + dx * w, my + dy * w);
     const gr = octx.createLinearGradient(p0[0], p0[1], p1[0], p1[1]); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,1)');
     octx.fillStyle = gr; octx.fillRect(0, 0, off.width, off.height);
     blit(1);
     if (mode) { // 前景從鏡頭前掃過，蓋住接縫
-      setT(ctx, BASE); const a = Math.sin(Math.PI * t);
+      setT(ctx, BASE); const a = 0.75 * Math.pow(Math.sin(Math.PI * t), 1.5);
       ctx.save(); ctx.globalAlpha = a;
       for (let k = 0; k < 7; k++) {
-        const x = -sw * 1.4 + k * sw * 0.45 - (e - 0.5) * D[0] * 1.9, h = sh * (1.1 + (k % 3) * 0.35);
+        const x = -sw * 1.4 + k * sw * 0.45 - (e - 0.5) * D[0] * 1.4, h = sh * (1.1 + (k % 3) * 0.35);
         if (mode === 'grass') for (let j = 0; j < 5; j++) { const xx = x + j * 34 - 60, hh = h * (0.55 + 0.12 * ((j * 7 + k) % 4)), b = (j % 2 ? 1 : -1) * 70; brush(ctx, bezPts([xx, sh + 40], [xx + b * 0.1, sh - hh * 0.45], [xx + b * 0.6, sh - hh * 0.85], [xx + b, sh - hh], 14), 11, 'rgba(18,20,44,.9)', k * 5 + j, 0.75); }
         else { ctx.save(); ctx.translate(x, sh + 40); ctx.scale(3.4, 3.4); ctx.translate(-PAMPAS[k * 4].x, 0); pampasOne(ctx, PAMPAS[k * 4], 0, env.time, 1, '#f6ead0', h / 3.4); ctx.restore(); }
       }
@@ -1645,26 +1659,27 @@ function pan(g, t, D, mode) {
     }
   }
 }
-/* 仰望：鏡頭抬起並帶一點翻轉，舊畫面失焦淡去 */
-function lookUp(g, t, roll, dist) {
-  const e = EASE(t);
-  draw(ctx, g + 1, mul(BASE, mul(tr(0, -(1 - e) * dist), rot(-(1 - e) * roll))));
-  clearOff();
-  draw(octx, g, mul(BASE, mul(tr(0, e * dist), rot(e * roll))));
-  blit(1 - sstep(0.25, 0.75, t), `blur(${(e * 7 * DPR).toFixed(1)}px)`);
-}
 /* 升空：往上穿出，畫面一亮，落到俯瞰 */
 const RISE_FOCUS = { fish: [0, -170], cat: [0, -200], whale: [0, -220], dog: [0, -320] };
-const FLASH = ['#eef6f0', '#9ea3d8', '#f2e2c2', '#f2dfb8'];
+const FLASH = ['#e6efe8', '#8d92c8', '#ecdcbc', '#e9d3a8'];
 function rise(g, t) {
   const st = stageInfo(g), [fx, fy] = RISE_FOCUS[st.anim];
-  const e1 = sstep(0, 0.6, t), sA = 1 + 2.6 * e1 * e1;
-  const e2 = sstep(0.3, 1, t), q = 1 - Math.pow(1 - e2, 3), sB = lerp(2.8, 1, q), yaw = lerp(0.8, 0, q);
+  const e1 = sstep(0, 0.7, t), sA = 1 + 1.6 * e1 * e1;
+  const e2 = sstep(0.25, 1, t), q = 1 - Math.pow(1 - e2, 2), sB = lerp(2.2, 1, q), yaw = lerp(0.5, 0, q);
   draw(ctx, g + 1, mul(BASE, [sB * Math.cos(yaw), sB * Math.sin(yaw), 0, 0]));
   clearOff();
   draw(octx, g, mul(BASE, [sA, 0, -fx * sA * e1 + fx * (1 - sA) * (1 - e1), -fy * sA * e1 + fy * (1 - sA) * (1 - e1)]));
-  blit(1 - sstep(0.35, 0.6, t));
-  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 0.85 * Math.exp(-(((t - 0.46) / 0.13) ** 2)); ctx.fillStyle = FLASH[st.ci]; ctx.fillRect(0, 0, cv.width, cv.height); ctx.restore();
+  blit(1 - sstep(0.3, 0.7, t));
+  // 往上穿過一層雲霧：雲從上往下流過鏡頭，最濃的時候兩個畫面正好交接
+  const [sw, sh] = screenHalf(), dens = Math.pow(Math.sin(Math.PI * clamp((t - 0.1) / 0.8, 0, 1)), 1.4);
+  setT(ctx, BASE); ctx.save();
+  for (let k = 0; k < 22; k++) {
+    const x = ((k * 263) % (2 * sw + 600)) - sw - 300, y = ((k * 149) % (2 * sh + 900)) - sh - 450 + t * (1400 + (k % 4) * 260);
+    const yy = ((y + sh + 700) % (2 * sh + 1400)) - sh - 700;
+    wash(ctx, FLASH[st.ci], x, yy, 900 + (k % 3) * 300, 420 + (k % 4) * 90, dens * 0.95, (k % 5) * 0.2);
+  }
+  ctx.globalAlpha = dens * 0.55; ctx.fillStyle = FLASH[st.ci]; ctx.fillRect(-9000, -9000, 18000, 18000);
+  ctx.restore();
 }
 /* 俯仰：從正上方慢慢抬到地平線，再抬向天空；天色在這段時間裡過去 */
 const DAYSKY = [['#cfe2d9', '#eef4ee'], ['#1f2350', '#3b4078'], ['#dcc59c', '#f0dfbf'], ['#c9ad7c', '#efd9ae']];
@@ -1723,14 +1738,14 @@ const TRANS = [
     const st = stageInfo(g), [sw, sh] = screenHalf(), hv = viewRidge(st.ci).y;
     if (st.ci === 0) return pan(g, t, [0, hv + sh + 10], 'water');
     if (st.ci === 1) return pan(g, t, [sw * 2.2, hv - 110], 'grass');
-    if (st.ci === 2) return pan(g, t, [0, hv], null);
+    if (st.ci === 2) return lockZoom(g, t, islandM());
     return pan(g, t, [-sw * 2.2, hv - 110], 'pampas');
   },
   (g, t) => {
     const st = stageInfo(g), [, sh] = screenHalf();
-    if (st.ci === 0) return lookUp(g, t, 0.18, sh * 1.3);
-    if (st.ci === 1) return lookUp(g, t, 0.6, sh * 1.1);
-    if (st.ci === 2) return lookUp(g, t, -0.12, sh * 1.6);
+    if (st.ci === 0) return pan(g, t, [0, -sh * 1.7], null);
+    if (st.ci === 1) return pan(g, t, [screenHalf()[0] * 0.3, -sh * 1.6], null);
+    if (st.ci === 2) return pan(g, t, [0, -sh * 1.8], null);
     return pan(g, t, [-screenHalf()[0] * 1.2, -sh * 1.9], 'pampas');
   },
   rise,
@@ -1836,6 +1851,13 @@ function soundWeights(g, t, a) {
 }
 const DARK = [st => [0.1, 0.12, 0.2, 0.25][st.ci], st => [0.9, 1, 0.6, 0.5][st.ci], st => ({ fish: 0.3, cat: 0.9, whale: 0.45, dog: 0.15 })[st.anim],
   st => ({ fish: 0.75, cat: 0.95, whale: 0.25, dog: 0.2 })[st.anim], st => [0.35, 0.95, 0.3, 0.8][st.ci], st => [1, 0.6, 0.55, 0.95][st.ci]];
+const TONES = [['#c9c0a8', '#d9d2dc', '#d2bc93', '#b8bfb2'], ['#20303a', '#2c3458', '#9a8890', '#6a5050'], ['#8fb8ad', '#3a3f6e', '#a8a68e', '#c9a86e'],
+  ['#2a5552', '#2a2f5e', '#e2cda6', '#a8a070'], ['#b0c7b1', '#30356a', '#b8c4b0', '#6e6a3e'], ['#1a2a40', '#a88aa0', '#c8925e', '#1c2838']];
+const TONE = g => { const st = stageInfo(g); return TONES[st.kind][st.ci]; };
+function mixHex(a, b, t) {
+  const A = parseInt(a.slice(1), 16), B = parseInt(b.slice(1), 16), m = (s) => Math.round(lerp((A >> s) & 255, (B >> s) & 255, t));
+  return `rgb(${m(16)},${m(8)},${m(0)})`;
+}
 const darkOf = g => { const st = stageInfo(g); return DARK[st.kind](st); };
 
 /* ════════════ 狀態、互動、引導 ════════════ */
@@ -1894,14 +1916,14 @@ addEventListener('wheel', e => {
   e.preventDefault();
   if (!S0.drawn) return;
   const d = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 800 : 1);
-  S0.vz = clamp(S0.vz + d * 0.00007, -0.03, 0.03);
+  S0.vz = clamp(S0.vz + d * 0.000042, -0.02, 0.02);
   S0.lastInput = performance.now();
 }, { passive: false });
 addEventListener('keydown', e => {
   if (e.key === 'm' || e.key === 'M') { SND.start(); SND.toggle(); return; }
   if (!S0.drawn) return;
-  if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') { SND.start(); S0.vz = clamp(S0.vz + 0.009, -0.03, 0.03); S0.lastInput = performance.now(); e.preventDefault(); }
-  if (e.key === 'ArrowUp' || e.key === 'PageUp') { S0.vz = clamp(S0.vz - 0.009, -0.03, 0.03); S0.lastInput = performance.now(); e.preventDefault(); }
+  if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') { SND.start(); S0.vz = clamp(S0.vz + 0.0055, -0.02, 0.02); S0.lastInput = performance.now(); e.preventDefault(); }
+  if (e.key === 'ArrowUp' || e.key === 'PageUp') { S0.vz = clamp(S0.vz - 0.0055, -0.02, 0.02); S0.lastInput = performance.now(); e.preventDefault(); }
 });
 sndBtn.addEventListener('click', () => { SND.start(); SND.toggle(); });
 
@@ -1947,11 +1969,11 @@ function frame(now) {
   }
   env.time = now / 1000;
   if (S0.drawn && !window.__freeze) {
-    const f = S0.z - Math.floor(S0.z), slow = 1 - 0.55 * Math.exp(-(((f - 0.42) / 0.16) ** 2));
+    const f = S0.z - Math.floor(S0.z), slow = 1 - 0.5 * Math.exp(-((f / 0.07) ** 2)) - 0.5 * Math.exp(-(((1 - f) / 0.07) ** 2));
     S0.z = Math.max(0, S0.z + S0.vz * slow * dt * 60);
     S0.vz *= Math.pow(0.92, dt * 60);
     const idle = now - S0.lastInput;
-    if (idle > 12000 && Math.abs(S0.vz) < 0.001) S0.z += 0.011 * dt;
+    if (idle > 12000 && Math.abs(S0.vz) < 0.001) S0.z += 0.009 * dt;
     if (S0.z < 0.2 && now - S0.drawnAt > 1800 && (S0.shownScroll === 0 || (idle > 22000 && S0.shownScroll === 1))) {
       S0.shownScroll++; guideKey = ''; setGuide('scroll' + S0.shownScroll, '轉動滾輪，或按空白鍵　往後退', 'scroll');
     }
@@ -1969,7 +1991,11 @@ function frame(now) {
   const a = 1 - sstep(0.3, 0.7, t);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
   if (t < 1e-4) draw(ctx, g, BASE);
-  else TRANS[stageInfo(g).kind](g, t);
+  else {
+    TRANS[stageInfo(g).kind](g, t);
+    const ta = TONE(g), tb = TONE(g + 1), k = Math.pow(Math.sin(Math.PI * t), 1.2) * 0.32;
+    if (k > 0.01) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'color'; ctx.globalAlpha = k; ctx.fillStyle = mixHex(ta, tb, t); ctx.fillRect(0, 0, cv.width, cv.height); ctx.restore(); }
+  }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'overlay'; ctx.fillStyle = pat(ctx, 'grain'); ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.globalCompositeOperation = 'source-over';
